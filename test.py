@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 64
 EPOCHS = 30
 
@@ -37,6 +37,7 @@ def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
         val_loss = 0
         val_correct = 0
         val_total = 0
+        model.eval()
         with torch.no_grad():
             for X,y in val_dataloader:
                 X,y =  X.to(device), y.to(device)
@@ -79,10 +80,10 @@ if __name__ == "__main__":
 
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop(224,antialias=True),
-        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomHorizontalFlip(p=0.25),
         transforms.RandomRotation(degrees=30),
-        transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
-        transforms.RandomAffine(degrees=0,translate=(0.1,0.1),scale=(0.9,1.1),shear=10),
+        #transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
+        #transforms.RandomAffine(degrees=0,translate=(0.1,0.1),scale=(0.9,1.1),shear=10),
         transforms.ToTensor(),
     ])
 
@@ -91,7 +92,14 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    trainval_data = datasets.OxfordIIITPet(
+    train_data = datasets.OxfordIIITPet(
+        root="data",
+        split="trainval",
+        download=True,
+        transform=training_transform
+    )
+
+    validation_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
@@ -105,11 +113,17 @@ if __name__ == "__main__":
         transform=transform
     )
 
-    train_size = int(len(trainval_data) * 0.8)
-    val_size = len(trainval_data) - train_size
-    
+    train_size = int(len(train_data) * 0.8)
+    val_size = len(train_data) - train_size
+
+    ##the split will be the same for both as we have a set seed
+    #so we now have a transformed training set and untransformed validation set
     gen = torch.Generator().manual_seed(50)
-    training_data, val_data = random_split(trainval_data,[train_size,val_size],generator=gen)
+    training_data,__ = random_split(train_data,[train_size,val_size],generator=gen)
+    __,val_data = random_split(validation_data,[train_size,val_size],generator=gen)
+    
+
+    
 
     train_dataloader = DataLoader(training_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=True)
@@ -134,10 +148,38 @@ if __name__ == "__main__":
             self.maxPool2 = nn.MaxPool2d(kernel_size=3,stride=2)
             self.maxPool3 = nn.MaxPool2d(kernel_size=3,stride=2)
 
+            self.features = nn.Sequential(
+
+                nn.Conv2d(in_channels=3,out_channels=96,kernel_size=11,stride=4,padding=2),
+                nn.BatchNorm2d(96),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3,stride=2),
+                
+                nn.Conv2d(in_channels=96,out_channels=256,kernel_size=5,stride=1,padding=2),
+                nn.BatchNorm2d(256),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3,stride=2),
+
+                nn.Conv2d(in_channels=256,out_channels=384,kernel_size=3,stride=1,padding=1),
+                nn.BatchNorm2d(384),
+                nn.ReLU(),
+
+                nn.Conv2d(in_channels=384,out_channels=384,kernel_size=3,stride=1,padding=1),
+                nn.BatchNorm2d(384),
+                nn.ReLU(),
+
+                nn.Conv2d(in_channels=384,out_channels=256,kernel_size=3,stride=1,padding=1),
+                nn.BatchNorm2d(256),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3,stride=2)
+            )
+
             self.fullyConectedLayers = nn.Sequential(
+                nn.Dropout(p=0.5),
                 nn.Linear(9216,4096),
                 nn.ReLU(),
 
+                nn.Dropout(p=0.5),
                 nn.Linear(4096,2048),
                 nn.ReLU(),
 
@@ -146,12 +188,16 @@ if __name__ == "__main__":
 
 
         def forward(self, x):
+            """
             x = self.maxPool1(self.relu(self.convL1(x)))
             x = self.maxPool2(self.relu(self.convL2(x)))
             x = self.relu(self.convL3(x))
             x = self.relu(self.convL4(x))
             x = self.maxPool3(self.relu(self.convL5(x)))
             #print("Shape before flatten:", x.shape)
+            #print("Feature map:", x.shape)
+            """
+            x = self.features(x)
             x = self.flatten(x)
             logits = self.fullyConectedLayers(x)
             return logits
@@ -166,6 +212,7 @@ if __name__ == "__main__":
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------a------------")
         train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
-        #print("Testing...")
-        #test_loop(test_dataloader, model, loss_fn)
+
+    print("Testing...")
+    test_loop(test_dataloader, model, loss_fn)
     print("Done!")
