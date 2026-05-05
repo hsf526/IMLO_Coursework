@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
     train_dataloader = DataLoader(training_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=True)
-    val_dataloader = DataLoader(val_data,4,shuffle=True)
+    val_dataloader = DataLoader(val_data,32,shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -206,13 +206,13 @@ if __name__ == "__main__":
     
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
+    scheduler = torch.optim.lr_scheduler(optimizer,step_size=5,gamma=0.5)
     
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------a------------")
         train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
-
+        scheduler.step()
     print("Testing...")
     test_loop(test_dataloader, model, loss_fn)
     print("Done!")
