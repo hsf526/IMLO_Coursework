@@ -61,8 +61,10 @@ def test_loop(dataloader, model, loss_fn):
 if __name__ == "__main__":
 
     transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
+    transforms.RandomResizedCrop((224, 224),antialias=True),
+    transforms.RandomHorizontalFlip(p=0.25),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
     ])
 
     training_data = datasets.OxfordIIITPet(
@@ -78,8 +80,8 @@ if __name__ == "__main__":
         download=True,
         transform=transform
     )
-    train_dataloader = DataLoader(training_data, batch_size=64, shuffle=True)
-    test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
+    train_dataloader = DataLoader(training_data, BATCH_SIZE, shuffle=True)
+    test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=True)
     labels_map = training_data.classes
 
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
@@ -114,9 +116,52 @@ if __name__ == "__main__":
     
 
     for t in range(EPOCHS):
-        print(f"Epoch {t+1}\n-------------------------------")
-        train_loop(train_dataloader, model, loss_fn, optimizer)
-        test_loop(test_dataloader, model, loss_fn)
+        print(f"Epoch {t+1}\n-------------------a------------")
+
+        #train_loop(train_dataloader, model, loss_fn, optimizer)
+        #test_loop(test_dataloader, model, loss_fn)
     print("Done!")
 
+    X,y = next(iter(train_dataloader))
+    print(X.shape)
+    X = X[0].unsqueeze(0)
+    kernal = torch.tensor([[[[1,2,1], [2, 4, 2], [1, 2, 1]]]], dtype=torch.float32) / 16
+    print(kernal.shape)
+    kernal = kernal.repeat(1,3,1,1)
+    kernal = kernal.repeat(2, 1, 1, 1)
+    conv = nn.Conv2d(in_channels=3,out_channels=2,kernel_size=3,padding=1)
+    conv.weight = nn.Parameter(kernal)
+    print(conv.weight.shape)
+    output = conv(X)
+    print(output.shape)
     torch.save(model.state_dict(), "model_weights.pth")
+
+    img = X[0].detach().cpu()          # [3, 224, 224]
+    img = img.permute(1, 2, 0)         # [224, 224, 3]
+
+    # Undo normalization if you used Normalize((0.5,...),(0.5,...))
+    img = img * 0.5 + 0.5              # back to [0,1]
+
+    # --- Extract feature maps ---
+    fm1 = output[0, 0].detach().cpu()  # [224, 224]
+    fm2 = output[0, 1].detach().cpu()  # [224, 224]
+
+    # --- Plot ---
+    plt.figure(figsize=(12,4))
+
+    plt.subplot(1,3,1)
+    plt.imshow(img)
+    plt.title("Original Image")
+    plt.axis("off")
+
+    plt.subplot(1,3,2)
+    plt.imshow(fm1, cmap='gray')
+    plt.title("Feature Map 1")
+    plt.axis("off")
+
+    plt.subplot(1,3,3)
+    plt.imshow(fm2, cmap='gray')
+    plt.title("Feature Map 2")
+    plt.axis("off")
+
+    plt.show()
