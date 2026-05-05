@@ -1,7 +1,7 @@
 import os
 import torch
 from torch import nn
-from torch.utils.data import Dataset,random_split
+from torch.utils.data import Dataset,random_split,Subset
 from torchvision import datasets,transforms
 from torchvision.transforms import ToTensor,Lambda
 from torch.utils.data import DataLoader
@@ -11,7 +11,7 @@ import numpy as np
 
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 64
-EPOCHS = 30
+EPOCHS = 75
 
 def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
         size = len(train_dataloader.dataset)
@@ -92,7 +92,7 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    train_data = datasets.OxfordIIITPet(
+    training_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
@@ -113,21 +113,20 @@ if __name__ == "__main__":
         transform=transform
     )
 
-    train_size = int(len(train_data) * 0.8)
-    val_size = len(train_data) - train_size
+    train_size = int(len(training_data) * 0.8)
+    val_size = len(training_data) - train_size
 
     ##the split will be the same for both as we have a set seed
     #so we now have a transformed training set and untransformed validation set
     gen = torch.Generator().manual_seed(50)
-    training_data,__ = random_split(train_data,[train_size,val_size],generator=gen)
+    train_data,__ = random_split(training_data,[train_size,val_size],generator=gen)
     __,val_data = random_split(validation_data,[train_size,val_size],generator=gen)
-    
 
     
 
-    train_dataloader = DataLoader(training_data, BATCH_SIZE, shuffle=True)
-    test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=True)
-    val_dataloader = DataLoader(val_data,32,shuffle=False)
+    train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
+    test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
+    val_dataloader = DataLoader(val_data,64,shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -137,19 +136,8 @@ if __name__ == "__main__":
             self.flatten = nn.Flatten()
             self.relu = nn.ReLU()
 
-            #convoloution layers from alexnet
-            self.convL1 = nn.Conv2d(in_channels=3,out_channels=96,kernel_size=11,stride=4,padding=2)
-            self.convL2 = nn.Conv2d(in_channels=96,out_channels=256,kernel_size=5,stride=1,padding=2)
-            self.convL3 = nn.Conv2d(in_channels=256,out_channels=384,kernel_size=3,stride=1,padding=1)
-            self.convL4 = nn.Conv2d(in_channels=384,out_channels=384,kernel_size=3,stride=1,padding=1)
-            self.convL5 = nn.Conv2d(in_channels=384,out_channels=256,kernel_size=3,stride=1,padding=1)
-        
-            self.maxPool1 = nn.MaxPool2d(kernel_size=3,stride=2)
-            self.maxPool2 = nn.MaxPool2d(kernel_size=3,stride=2)
-            self.maxPool3 = nn.MaxPool2d(kernel_size=3,stride=2)
-
+            # taken inspiration from alexnet for the convoloutions
             self.features = nn.Sequential(
-
                 nn.Conv2d(in_channels=3,out_channels=96,kernel_size=11,stride=4,padding=2),
                 nn.BatchNorm2d(96),
                 nn.ReLU(),
@@ -174,16 +162,10 @@ if __name__ == "__main__":
                 nn.MaxPool2d(kernel_size=3,stride=2)
             )
 
-            self.fullyConectedLayers = nn.Sequential(
-                nn.Dropout(p=0.5),
-                nn.Linear(9216,4096),
-                nn.ReLU(),
-
-                nn.Dropout(p=0.5),
-                nn.Linear(4096,2048),
-                nn.ReLU(),
-
-                nn.Linear(2048,37)
+            self.classifyer = nn.Sequential(
+                nn.AdaptiveAvgPool2d((1,1)),
+                nn.Flatten(),
+                nn.Linear(256,37)
             )
 
 
@@ -198,21 +180,22 @@ if __name__ == "__main__":
             #print("Feature map:", x.shape)
             """
             x = self.features(x)
-            x = self.flatten(x)
-            logits = self.fullyConectedLayers(x)
+            logits = self.classifyer(x)
             return logits
         
     model = NeuralNetwork().to(device)
     
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    scheduler = torch.optim.lr_scheduler(optimizer,step_size=5,gamma=0.5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=10,gamma=0.5)
     
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------a------------")
         train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
+        print("Learning rate: ",scheduler.get_last_lr())
         scheduler.step()
+        
     print("Testing...")
     test_loop(test_dataloader, model, loss_fn)
     print("Done!")
