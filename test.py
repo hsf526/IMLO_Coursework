@@ -1,7 +1,7 @@
 import os
 import torch
 from torch import nn
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset,random_split
 from torchvision import datasets,transforms
 from torchvision.transforms import ToTensor,Lambda
 from torch.utils.data import DataLoader
@@ -13,14 +13,14 @@ LEARNING_RATE = 1e-3
 BATCH_SIZE = 64
 EPOCHS = 30
 
-def train_loop(dataloader, model, loss_fn, optimizer):
-        size = len(dataloader.dataset)
-        num_batches = len(dataloader)
+def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
+        size = len(train_dataloader.dataset)
+        num_batches = len(train_dataloader)
         print("Size: ",size,"Batches: ",num_batches)
         # Set the model to training mode - important for batch normalization and dropout layers
         # Unnecessary in this situation but added for best practices
         model.train()
-        for batch, (X, y) in enumerate(dataloader):
+        for batch, (X, y) in enumerate(train_dataloader):
             X, y = X.to(device), y.to(device)
             # Compute prediction and loss
             pred = model(X)
@@ -33,6 +33,21 @@ def train_loop(dataloader, model, loss_fn, optimizer):
             if batch % 10 == 0 or batch == num_batches-1:
                 loss, current = loss.item(), batch * BATCH_SIZE + len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+        val_loss = 0
+        val_correct = 0
+        val_total = 0
+        with torch.no_grad():
+            for X,y in val_dataloader:
+                X,y =  X.to(device), y.to(device)
+
+                preds = model(X)
+                val_loss += loss_fn(preds,y).item()
+                val_correct += (preds.argmax(1) == y).sum().item()
+                val_total += y.size(0)
+        val_loss = val_loss/len(val_dataloader)
+        accuracy = val_correct/val_total * 100
+        print(f'Validation Loss: {val_loss:.20f} | Validation Accuracy: {accuracy:.2f}%')
 
 
 def test_loop(dataloader, model, loss_fn):
@@ -67,7 +82,7 @@ if __name__ == "__main__":
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomRotation(degrees=30),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
-        transforms.RandomAffine(degrees=0,translation=(0.1,0.1),scale=(0.9,1.1),sheer=10),
+        transforms.RandomAffine(degrees=0,translate=(0.1,0.1),scale=(0.9,1.1),shear=10),
         transforms.ToTensor(),
     ])
 
@@ -76,11 +91,11 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    training_data = datasets.OxfordIIITPet(
+    trainval_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
-        transform=training_transform
+        transform=transform
     )
 
     test_data = datasets.OxfordIIITPet(
@@ -90,15 +105,15 @@ if __name__ == "__main__":
         transform=transform
     )
 
-    val_data = datasets.OxfordIIITPet(
-        root="data",
-        split="trainval",
-        download=True,
-        transform=transform
-    )
+    train_size = int(len(trainval_data) * 0.8)
+    val_size = len(trainval_data) - train_size
+    
+    gen = torch.Generator().manual_seed(50)
+    training_data, val_data = random_split(trainval_data,[train_size,val_size],generator=gen)
+
     train_dataloader = DataLoader(training_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=True)
-    labels_map = training_data.classes
+    val_dataloader = DataLoader(val_data,4,shuffle=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -150,7 +165,7 @@ if __name__ == "__main__":
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------a------------")
-        train_loop(train_dataloader, model, loss_fn, optimizer)
-        print("Testing...")
-        test_loop(test_dataloader, model, loss_fn)
+        train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
+        #print("Testing...")
+        #test_loop(test_dataloader, model, loss_fn)
     print("Done!")
