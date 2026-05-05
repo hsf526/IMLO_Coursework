@@ -60,25 +60,29 @@ def test_loop(dataloader, model, loss_fn):
 
 if __name__ == "__main__":
 
-    transform = transforms.Compose([
-    transforms.RandomResizedCrop((224, 224),antialias=True),
-    transforms.RandomHorizontalFlip(p=0.25),
-    transforms.ToTensor(),
-    transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+    training_transform = transforms.Compose([
+        transforms.RandomResizedCrop((224, 224),antialias=True),
+        transforms.RandomHorizontalFlip(p=0.25),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+    ])
+    test_transform = transforms.Compose([
+        transforms.Resize((224,224)),
+        transforms.ToTensor()
     ])
 
     training_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
-        transform=transform
+        transform=training_transform
     )
 
     test_data = datasets.OxfordIIITPet(
         root="data",
         split="test",
         download=True,
-        transform=transform
+        transform=test_transform
     )
     train_dataloader = DataLoader(training_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=True)
@@ -90,6 +94,7 @@ if __name__ == "__main__":
         def __init__(self):
             super().__init__()
             self.flatten = nn.Flatten()
+            self.relu = nn.ReLU()
             self.linear_relu_stack = nn.Sequential(
                 # 3 * 244 * 244 as ive standardised image size to 244x244
                 # and each pixel has 3 channels
@@ -102,10 +107,39 @@ if __name__ == "__main__":
                 nn.Linear(512,37),
                 nn.Softmax(dim=1)
             )
+            #convoloution layers from alexnet
+            self.convL1 = nn.Conv2d(in_channels=3,out_channels=96,kernel_size=11,stride=4,padding=2)
+            self.convL2 = nn.Conv2d(in_channels=96,out_channels=256,kernel_size=5,stride=1,padding=2)
+            self.convL3 = nn.Conv2d(in_channels=256,out_channels=384,kernel_size=3,stride=1,padding=1)
+            self.convL4 = nn.Conv2d(in_channels=384,out_channels=256,kernel_size=3,stride=1,padding=1)
+            self.convL5 = nn.Conv2d(in_channels=256,out_channels=256,kernel_size=3,stride=2,padding=1)
+        
+            self.maxPool1 = nn.MaxPool2d(kernel_size=3,stride=2)
+            self.maxPool2 = nn.MaxPool2d(kernel_size=3,stride=2)
+            self.maxPool3 = nn.MaxPool2d(kernel_size=3,stride=1)
+
+            self.fullyConectedLayers = nn.Sequential(
+                nn.Linear(9216,4096),
+                nn.ReLU(),
+
+                nn.Linear(4096,2048),
+                nn.ReLU(),
+
+                nn.Linear(2048,37),
+                nn.ReLU(),
+
+                nn.Softmax(dim=1)
+            )
+
 
         def forward(self, x):
+            x = self.maxPool1(self.relu(self.convL1(x)))
+            x = self.maxPool2(self.relu(self.convL2(x)))
+            x = self.maxPool3(self.relu(self.convL3(x)))
+            x = self.relu(self.convL4(x))
+            x = self.relu(self.convL5(x))
             x = self.flatten(x)
-            logits = self.linear_relu_stack(x)
+            logits = self.fullyConectedLayers(x)
             return logits
         
     model = NeuralNetwork().to(device)
@@ -118,8 +152,8 @@ if __name__ == "__main__":
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------a------------")
 
-        #train_loop(train_dataloader, model, loss_fn, optimizer)
-        #test_loop(test_dataloader, model, loss_fn)
+        train_loop(train_dataloader, model, loss_fn, optimizer)
+        test_loop(test_dataloader, model, loss_fn)
     print("Done!")
 
     X,y = next(iter(train_dataloader))
