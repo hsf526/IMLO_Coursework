@@ -9,9 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 3e-4
 BATCH_SIZE = 64
-EPOCHS = 75
+EPOCHS = 30
+WEIGHT_DECAY = 1e-4
 
 def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
         size = len(train_dataloader.dataset)
@@ -81,9 +82,9 @@ if __name__ == "__main__":
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop(224,antialias=True),
         transforms.RandomHorizontalFlip(p=0.25),
-        transforms.RandomRotation(degrees=30),
-        #transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
-        #transforms.RandomAffine(degrees=0,translate=(0.1,0.1),scale=(0.9,1.1),shear=10),
+        #transforms.RandomRotation(degrees=30),
+        transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
+       # transforms.RandomAffine(degrees=0,translate=(0.1,0.1),scale=(0.9,1.1),shear=10),
         transforms.ToTensor(),
     ])
 
@@ -133,38 +134,52 @@ if __name__ == "__main__":
     class NeuralNetwork(nn.Module):
         def __init__(self):
             super().__init__()
+            
             self.flatten = nn.Flatten()
             self.relu = nn.ReLU()
 
             # taken inspiration from alexnet for the convoloutions
             self.features = nn.Sequential(
-                nn.Conv2d(in_channels=3,out_channels=96,kernel_size=11,stride=4,padding=2),
-                nn.BatchNorm2d(96),
+                #set up the convoloution layer that the sobel kernal will be input into
+
+                nn.Conv2d(in_channels=3,out_channels=32,kernel_size=5,stride=1,padding=1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(),
+                
+                nn.Conv2d(in_channels=32,out_channels=64,kernel_size=3,stride=2,padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3,stride=2),
+
+                nn.Conv2d(in_channels=64,out_channels=128,kernel_size=3,stride=1,padding=1),
+                nn.BatchNorm2d(128),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=3,stride=2),
                 
-                nn.Conv2d(in_channels=96,out_channels=256,kernel_size=5,stride=1,padding=2),
+                nn.Conv2d(in_channels=128,out_channels=256,kernel_size=3,stride=1,padding=1),
                 nn.BatchNorm2d(256),
                 nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3,stride=2),
 
-                nn.Conv2d(in_channels=256,out_channels=384,kernel_size=3,stride=1,padding=1),
-                nn.BatchNorm2d(384),
+                nn.Conv2d(in_channels=256,out_channels=512,kernel_size=3,stride=2,padding=1),
+                nn.BatchNorm2d(512),
                 nn.ReLU(),
 
-                nn.Conv2d(in_channels=384,out_channels=384,kernel_size=3,stride=1,padding=1),
-                nn.BatchNorm2d(384),
+                nn.Conv2d(in_channels=512,out_channels=1024,kernel_size=3,stride=2,padding=1),
+                nn.BatchNorm2d(1024),
                 nn.ReLU(),
-
-                nn.Conv2d(in_channels=384,out_channels=256,kernel_size=3,stride=1,padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3,stride=2)
             )
 
             self.classifyer = nn.Sequential(
-                nn.AdaptiveAvgPool2d((1,1)),
+
                 nn.Flatten(),
+                nn.Linear(1024*7*7,512),
+                nn.Dropout(p=0.5),
+                nn.ReLU(),
+
+                nn.Linear(512,256),
+                nn.Dropout(p=0.5),
+                nn.ReLU(),
+
                 nn.Linear(256,37)
             )
 
@@ -184,9 +199,9 @@ if __name__ == "__main__":
             return logits
         
     model = NeuralNetwork().to(device)
-    
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,weight_decay=1e-4)
+
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=10,gamma=0.5)
     
 
