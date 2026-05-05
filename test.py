@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-LEARNING_RATE = 1e-3
-BATCH_SIZE = 64
-EPOCHS = 5
+LEARNING_RATE = 5e-2
+BATCH_SIZE = 32
+EPOCHS = 30
 
 def train_loop(dataloader, model, loss_fn, optimizer):
         size = len(dataloader.dataset)
@@ -68,7 +68,8 @@ if __name__ == "__main__":
     ])
     test_transform = transforms.Compose([
         transforms.Resize((224,224)),
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
     ])
 
     training_data = datasets.OxfordIIITPet(
@@ -105,7 +106,6 @@ if __name__ == "__main__":
                 nn.Linear(2056, 512),
                 nn.ReLU(),
                 nn.Linear(512,37),
-                nn.Softmax(dim=1)
             )
             #convoloution layers from alexnet
             self.convL1 = nn.Conv2d(in_channels=3,out_channels=96,kernel_size=11,stride=4,padding=2)
@@ -127,8 +127,6 @@ if __name__ == "__main__":
 
                 nn.Linear(2048,37),
                 nn.ReLU(),
-
-                nn.Softmax(dim=1)
             )
 
 
@@ -151,7 +149,6 @@ if __name__ == "__main__":
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------a------------")
-
         train_loop(train_dataloader, model, loss_fn, optimizer)
         test_loop(test_dataloader, model, loss_fn)
     print("Done!")
