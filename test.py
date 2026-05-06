@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-LEARNING_RATE = 3e-4
+LEARNING_RATE = 3e-3
 BATCH_SIZE = 64
 EPOCHS = 30
 WEIGHT_DECAY = 1e-4
@@ -30,6 +30,7 @@ def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
             # Backpropagation
             loss.backward()
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad()
             if batch % 10 == 0 or batch == num_batches-1:
                 loss, current = loss.item(), batch * BATCH_SIZE + len(X)
@@ -67,8 +68,6 @@ def test_loop(dataloader, model, loss_fn):
             X, y = X.to(device), y.to(device)
             pred = model(X)
             test_loss += loss_fn(pred, y).item()
-            #print("Y: ",y)
-            #print("Pred: ",pred)
             correct += (pred.argmax(1) == y).type(torch.float).sum().item()
     print("Num batches: ",num_batches)
     print("Test Loss: ",test_loss)
@@ -80,11 +79,10 @@ def test_loop(dataloader, model, loss_fn):
 if __name__ == "__main__":
 
     training_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224,antialias=True),
+        transforms.RandomResizedCrop((224,224), scale=(0.8, 1.0), ratio=(0.9,1.1),antialias=True),
         transforms.RandomHorizontalFlip(p=0.25),
-        #transforms.RandomRotation(degrees=30),
+        transforms.RandomRotation(degrees=10),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
-       # transforms.RandomAffine(degrees=0,translate=(0.1,0.1),scale=(0.9,1.1),shear=10),
         transforms.ToTensor(),
     ])
 
@@ -93,11 +91,10 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    training_data = datasets.OxfordIIITPet(
+    trainval_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
-        transform=training_transform
     )
 
     validation_data = datasets.OxfordIIITPet(
@@ -114,14 +111,24 @@ if __name__ == "__main__":
         transform=transform
     )
 
-    train_size = int(len(training_data) * 0.8)
-    val_size = len(training_data) - train_size
+    train_size = int(len(trainval_data) * 0.8)
+    val_size = len(trainval_data) - train_size
 
     ##the split will be the same for both as we have a set seed
     #so we now have a transformed training set and untransformed validation set
     gen = torch.Generator().manual_seed(50)
-    train_data,__ = random_split(training_data,[train_size,val_size],generator=gen)
-    __,val_data = random_split(validation_data,[train_size,val_size],generator=gen)
+    train_idx, val_idx = random_split(range(len(trainval_data)), [train_size, val_size], generator=gen)
+
+    # Apply transforms AFTER splitting
+    train_data = Subset(
+        datasets.OxfordIIITPet(root="data", split="trainval", transform=training_transform),
+        train_idx.indices
+    )
+
+    val_data = Subset(
+        datasets.OxfordIIITPet(root="data", split="trainval", transform=transform),
+        val_idx.indices
+    )
 
     
 
@@ -130,6 +137,19 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(val_data,64,shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    class resnetBlock(nn.Module):
+        def __init__(self, c):
+            super().__init__()
+            self.conv = nn.Sequential(
+                nn.Conv2d(c, c, 3, padding=1),
+                nn.BatchNorm2d(c),
+                nn.ReLU(),
+                nn.Conv2d(c, c, 3, padding=1),
+                nn.BatchNorm2d(c),
+            )
+        def forward(self, x):
+            return self.conv(x) + x
 
     class NeuralNetwork(nn.Module):
         def __init__(self):
@@ -140,47 +160,45 @@ if __name__ == "__main__":
 
             # taken inspiration from alexnet for the convoloutions
             self.features = nn.Sequential(
-                #set up the convoloution layer that the sobel kernal will be input into
-
-                nn.Conv2d(in_channels=3,out_channels=32,kernel_size=5,stride=1,padding=1),
-                nn.BatchNorm2d(32),
-                nn.ReLU(),
                 
-                nn.Conv2d(in_channels=32,out_channels=64,kernel_size=3,stride=2,padding=1),
+                nn.Conv2d(3, 64, 3, stride=2, padding=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3,stride=2),
 
-                nn.Conv2d(in_channels=64,out_channels=128,kernel_size=3,stride=1,padding=1),
+                nn.Conv2d(64, 64, 3, stride=1, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+
+                nn.Conv2d(64, 128, 3, stride=1, padding=1),
                 nn.BatchNorm2d(128),
                 nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3,stride=2),
-                
-                nn.Conv2d(in_channels=128,out_channels=256,kernel_size=3,stride=1,padding=1),
+                nn.MaxPool2d(2),  # 56 → 28
+
+                nn.Conv2d(128, 256, 3, stride=1, padding=1),
                 nn.BatchNorm2d(256),
                 nn.ReLU(),
+                nn.Conv2d(256, 256, 3, stride=1, padding=1),
+                nn.BatchNorm2d(256),
+                nn.ReLU(),
+                nn.MaxPool2d(2),  # 28 → 14
 
-                nn.Conv2d(in_channels=256,out_channels=512,kernel_size=3,stride=2,padding=1),
+                nn.Conv2d(256, 512, 3, stride=1, padding=1),
                 nn.BatchNorm2d(512),
                 nn.ReLU(),
 
-                nn.Conv2d(in_channels=512,out_channels=1024,kernel_size=3,stride=2,padding=1),
-                nn.BatchNorm2d(1024),
-                nn.ReLU(),
+                resnetBlock(512),
+                resnetBlock(512),   # NEW BLOCK
+
+                nn.MaxPool2d(2),    # 14 → 7
             )
 
             self.classifyer = nn.Sequential(
 
+                nn.AdaptiveAvgPool2d(1),
                 nn.Flatten(),
-                nn.Linear(1024*7*7,512),
-                nn.Dropout(p=0.5),
-                nn.ReLU(),
 
-                nn.Linear(512,256),
                 nn.Dropout(p=0.5),
-                nn.ReLU(),
-
-                nn.Linear(256,37)
+                nn.Linear(512*1*1 ,37)
             )
 
 
@@ -195,21 +213,21 @@ if __name__ == "__main__":
             #print("Feature map:", x.shape)
             """
             x = self.features(x)
+            #print("Shape after features: ",x.shape)
             logits = self.classifyer(x)
             return logits
         
     model = NeuralNetwork().to(device)
 
-    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=10,gamma=0.5)
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=LEARNING_RATE, steps_per_epoch=len(train_dataloader), epochs=EPOCHS)
     
 
     for t in range(EPOCHS):
-        print(f"Epoch {t+1}\n-------------------a------------")
+        print(f"Epoch {t+1} / {EPOCHS}\n--------------------------------")
         train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
         print("Learning rate: ",scheduler.get_last_lr())
-        scheduler.step()
         
     print("Testing...")
     test_loop(test_dataloader, model, loss_fn)
