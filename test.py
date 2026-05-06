@@ -21,7 +21,7 @@ test_data = datasets.OxfordIIITPet(
         transform=transform
     )
 
-
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class resnetBlock(nn.Module):
         
@@ -102,19 +102,27 @@ class NeuralNetwork(nn.Module):
     
 if __name__ == "__main__":
     model = NeuralNetwork()
-    model.load_state_dict(torch.load("model_weights.pth"))
+    model.load_state_dict(torch.load("model.pth"))
     model.eval()
+
+    model.to(device)
 
     test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
 
     correct = 0
     total = 0
+    lenght = len(test_loader)
+    current = 0
 
     with torch.no_grad():
         for images, labels in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
             outputs = model(images)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+            current+=1
+            print(f"Testing... {current/lenght * 100:.2f}% ", end="\r")
 
     print(f"Test Accuracy: {100 * correct / total:.2f}%")

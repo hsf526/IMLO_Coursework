@@ -11,7 +11,7 @@ import numpy as np
 
 LEARNING_RATE = 3e-3
 BATCH_SIZE = 64
-EPOCHS = 30
+EPOCHS = 60
 WEIGHT_DECAY = 1e-4
 
 def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop((224,224), scale=(0.8, 1.0), ratio=(0.9,1.1),antialias=True),
-        transforms.RandomHorizontalFlip(p=0.25),
+        transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomRotation(degrees=10),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
         transforms.ToTensor(),
@@ -130,8 +130,6 @@ if __name__ == "__main__":
         val_idx.indices
     )
 
-    
-
     train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
     val_dataloader = DataLoader(val_data,64,shuffle=False)
@@ -139,7 +137,7 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     class resnetBlock(nn.Module):
-        
+
         def __init__(self, c):
             super().__init__()
 
@@ -226,7 +224,7 @@ if __name__ == "__main__":
         print(f"Epoch {t+1} / {EPOCHS}\n--------------------------------")
         train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
         print("Learning rate: ",scheduler.get_last_lr())
-        
-    print("Testing...")
+    
     test_loop(test_dataloader, model, loss_fn)
-    print("Done!")
+    torch.save(model.state_dict(), "model.pth")
+    print("------------------\nModel Trained and saved to model.pth\n------------------")
