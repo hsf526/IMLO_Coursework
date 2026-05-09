@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-LEARNING_RATE = 3e-3
-BATCH_SIZE = 64
-EPOCHS = 60
+LEARNING_RATE = 5e-3
+BATCH_SIZE = 32
+EPOCHS = 30
 WEIGHT_DECAY = 1e-4
 
 def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
@@ -32,10 +32,10 @@ def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
-            if batch % 10 == 0 or batch == num_batches-1:
+            if int(batch/num_batches * 100) % 25 == 0 or batch == num_batches-1:
                 loss, current = loss.item(), batch * BATCH_SIZE + len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
+        """
         val_loss = 0
         val_correct = 0
         val_total = 0
@@ -51,7 +51,7 @@ def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
         val_loss = val_loss/len(val_dataloader)
         accuracy = val_correct/val_total * 100
         print(f'Validation Loss: {val_loss:.20f} | Validation Accuracy: {accuracy:.2f}%')
-
+        """
 
 def test_loop(dataloader, model, loss_fn):
     # Set the model to evaluation mode - important for batch normalization and dropout layers
@@ -78,23 +78,60 @@ def test_loop(dataloader, model, loss_fn):
 
 if __name__ == "__main__":
 
+    """
+    
+    transform = transforms.Compose([
+        transforms.Resize((112,112)),
+        transforms.ToTensor()
+    ])
+
+    dataset_no_norm = datasets.OxfordIIITPet(
+        root="data",
+        split="trainval",   # or your actual TRAIN split
+        download=True,
+        transform=transform
+    )
+    loader = DataLoader(dataset_no_norm, batch_size=64, shuffle=False, num_workers=4)
+
+    mean = 0.
+    std = 0.
+    total_images = 0
+
+    for images, _ in loader:
+        batch_samples = images.size(0)
+        images = images.view(batch_samples, images.size(1), -1)
+        mean += images.mean(2).sum(0)
+        std += images.std(2).sum(0)
+        total_images += batch_samples
+
+    mean /= total_images
+    std /= total_images
+
+    print("Mean:", mean)
+    print("Std:", std)
+
+    """
+
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop((224,224), scale=(0.8, 1.0), ratio=(0.9,1.1),antialias=True),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomRotation(degrees=10),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
         transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240])
     ])
 
     transform = transforms.Compose([
         transforms.Resize((224,224)),
         transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240])
     ])
 
     trainval_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
+        transform=training_transform
     )
 
     validation_data = datasets.OxfordIIITPet(
@@ -111,7 +148,7 @@ if __name__ == "__main__":
         transform=transform
     )
 
-    train_size = int(len(trainval_data) * 0.8)
+    train_size = int(len(trainval_data))
     val_size = len(trainval_data) - train_size
 
     ##the split will be the same for both as we have a set seed
@@ -130,7 +167,7 @@ if __name__ == "__main__":
         val_idx.indices
     )
 
-    train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
+    train_dataloader = DataLoader(trainval_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
     val_dataloader = DataLoader(val_data,64,shuffle=False)
 
@@ -189,19 +226,17 @@ if __name__ == "__main__":
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
                 nn.BatchNorm2d(512),
                 nn.ReLU(),
-
-                resnetBlock(512),
-                resnetBlock(512),
-                resnetBlock(512),
-
                 nn.MaxPool2d(2), 
+
+                resnetBlock(512),
+                resnetBlock(512),
+
             )
 
             self.classifyer = nn.Sequential(
 
                 nn.AdaptiveAvgPool2d(1),
                 nn.Flatten(),
-
                 nn.Dropout(p=0.5),
                 nn.Linear(512*1*1 ,37)
             )
