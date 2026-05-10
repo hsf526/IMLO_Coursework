@@ -10,9 +10,10 @@ import numpy as np
 
 
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-])
+        transforms.Resize((224,224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240])
+    ])
 
 test_data = datasets.OxfordIIITPet(
         root="data",
@@ -76,12 +77,11 @@ class NeuralNetwork(nn.Module):
             nn.Conv2d(512, 512, 3, stride=1, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(),
-
-            resnetBlock(512),
-            resnetBlock(512),
-            resnetBlock(512),
-
             nn.MaxPool2d(2), 
+
+            resnetBlock(512),
+            resnetBlock(512),
+
         )
 
         self.classifyer = nn.Sequential(

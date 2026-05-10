@@ -14,7 +14,7 @@ BATCH_SIZE = 32
 EPOCHS = 30
 WEIGHT_DECAY = 1e-4
 
-def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer):
+def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,scheduler):
         size = len(train_dataloader.dataset)
         num_batches = len(train_dataloader)
         print("Size: ",size,"Batches: ",num_batches)
@@ -178,12 +178,12 @@ if __name__ == "__main__":
         def __init__(self, c):
             super().__init__()
 
-            self.activation = nn.ReLU()
+            self.activation = nn.Mish()
 
             self.conv = nn.Sequential(
                 nn.Conv2d(c, c, 3, padding=1),
                 nn.BatchNorm2d(c),
-                nn.ReLU(),
+                nn.Mish(),
                 nn.Conv2d(c, c, 3, padding=1),
                 nn.BatchNorm2d(c),
             )
@@ -225,7 +225,7 @@ if __name__ == "__main__":
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
                 nn.BatchNorm2d(512),
-                nn.ReLU(),
+                nn.Mish(),
                 nn.MaxPool2d(2), 
 
                 resnetBlock(512),
@@ -257,7 +257,7 @@ if __name__ == "__main__":
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1} / {EPOCHS}\n--------------------------------")
-        train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer)
+        train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,scheduler)
         print("Learning rate: ",scheduler.get_last_lr())
     
     test_loop(test_dataloader, model, loss_fn)
