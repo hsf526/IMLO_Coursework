@@ -143,7 +143,8 @@ if __name__ == "__main__":
         transforms.RandomRotation(degrees=10),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522])
+        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522]),
+        transforms.RandomErasing(p=0.5, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=128)
     ])
 
     transform = transforms.Compose([
@@ -198,12 +199,6 @@ if __name__ == "__main__":
     train_data = apply_transforms(train_data, training_transform)
     test_data = apply_transforms(test_data, transform)
 
-    print(type(train_data))          # should be list
-    print(type(train_data[0]))       # should be tuple
-    print(type(train_data[0][0]))    # should be torch.Tensor
-    print(type(train_data[0][1]))    # should be int
-    print(train_data[0][0].shape)    # should be torch.Size([3, 224, 224])
-
     train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
     val_dataloader = DataLoader(val_data,64,shuffle=False)
@@ -240,9 +235,7 @@ if __name__ == "__main__":
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
 
-                nn.Conv2d(64, 64, 3, stride=1, padding=1),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
+                resnetBlock(64),
 
                 nn.Conv2d(64, 128, 3, stride=1, padding=1),
                 nn.BatchNorm2d(128),
@@ -252,17 +245,13 @@ if __name__ == "__main__":
                 nn.Conv2d(128, 256, 3, stride=1, padding=1),
                 nn.BatchNorm2d(256),
                 nn.ReLU(),
-                nn.Conv2d(256, 256, 3, stride=1, padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(),
+                resnetBlock(256),
                 nn.MaxPool2d(2), 
 
                 nn.Conv2d(256, 512, 3, stride=1, padding=1),
                 nn.BatchNorm2d(512),
                 nn.ReLU(),
-                nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
-                nn.Mish(),
+                resnetBlock(512),
                 nn.MaxPool2d(2), 
 
                 resnetBlock(512),
