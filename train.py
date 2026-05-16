@@ -143,13 +143,13 @@ if __name__ == "__main__":
         transforms.RandomRotation(degrees=10),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240])
+        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522])
     ])
 
     transform = transforms.Compose([
         transforms.Resize((224,224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240])
+        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522])
     ])
 
     trainval_data = datasets.OxfordIIITPet(
