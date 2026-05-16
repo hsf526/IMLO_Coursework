@@ -6,6 +6,7 @@ from torchvision import datasets,transforms
 from torchvision.transforms import ToTensor,Lambda
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+from PIL import Image
 import numpy as np
 
 
@@ -112,6 +113,30 @@ if __name__ == "__main__":
 
     """
 
+    def apply_foreground_mask(data):
+
+        results_np = []
+
+        for idx, (img, (label, mask)) in enumerate(data):
+            img_np = np.array(img)
+            mask_np = np.array(mask)
+
+            background = (mask_np == 2)
+            img_np[background] = 128
+            
+            results_np.append((img_np, label))
+
+        return results_np
+
+    def apply_transforms(data, transform):
+        transformed_data = []
+        for img, label in data:
+            image = Image.fromarray(img.astype(np.uint8))
+            transformed_img = transform(image)
+            transformed_data.append((transformed_img, label))
+        return transformed_data
+
+
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop((224,224), scale=(0.8, 1.0), ratio=(0.9,1.1),antialias=True),
         transforms.RandomHorizontalFlip(p=0.5),
@@ -131,21 +156,21 @@ if __name__ == "__main__":
         root="data",
         split="trainval",
         download=True,
-        transform=training_transform
+        target_types=["category", "segmentation"],
     )
 
     validation_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
-        transform=transform
+        target_types=["category", "segmentation"],
     )
 
     test_data = datasets.OxfordIIITPet(
         root="data",
         split="test",
         download=True,
-        transform=transform
+        target_types=["category", "segmentation"],
     )
 
     train_size = int(len(trainval_data))
@@ -158,7 +183,7 @@ if __name__ == "__main__":
 
     # Apply transforms AFTER splitting
     train_data = Subset(
-        datasets.OxfordIIITPet(root="data", split="trainval", transform=training_transform),
+        datasets.OxfordIIITPet(root="data", split="trainval",  target_types=["category", "segmentation"]),
         train_idx.indices
     )
 
@@ -167,7 +192,19 @@ if __name__ == "__main__":
         val_idx.indices
     )
 
-    train_dataloader = DataLoader(trainval_data, BATCH_SIZE, shuffle=True)
+    train_data = apply_foreground_mask(train_data)
+    test_data = apply_foreground_mask(test_data)
+
+    train_data = apply_transforms(train_data, training_transform)
+    test_data = apply_transforms(test_data, transform)
+
+    print(type(train_data))          # should be list
+    print(type(train_data[0]))       # should be tuple
+    print(type(train_data[0][0]))    # should be torch.Tensor
+    print(type(train_data[0][1]))    # should be int
+    print(train_data[0][0].shape)    # should be torch.Size([3, 224, 224])
+
+    train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
     val_dataloader = DataLoader(val_data,64,shuffle=False)
 
