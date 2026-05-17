@@ -13,7 +13,7 @@ import numpy as np
 LEARNING_RATE = 5e-3
 BATCH_SIZE = 32
 EPOCHS = 30
-WEIGHT_DECAY = 1e-4
+WEIGHT_DECAY = 5e-5
 
 def train_loop(train_dataloader, model, loss_fn, optimizer,scheduler):
         size = len(train_dataloader.dataset)
@@ -57,30 +57,6 @@ def test_loop(dataloader, model, loss_fn,text):
     correct /= size
     print(f"{text} Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
-
-def apply_foreground_mask(data):
-
-        results_np = []
-
-        for idx, (img, (label, mask)) in enumerate(data):
-            img_np = np.array(img)
-            mask_np = np.array(mask)
-
-            background = (mask_np == 2)
-            img_np[background] = 128
-
-            results_np.append((img_np, label))
-
-        return results_np
-
-def apply_transforms(data, transform):
-    transformed_data = []
-    for img, label in data:
-        image = Image.fromarray(img.astype(np.uint8))
-        transformed_img = transform(image)
-        transformed_data.append((transformed_img, label))
-    return transformed_data
-
 if __name__ == "__main__":
 
     training_transform = transforms.Compose([
@@ -89,36 +65,39 @@ if __name__ == "__main__":
         transforms.RandomRotation(degrees=15),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522]),
+        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240]),
         transforms.RandomErasing(p=0.3, scale=(0.02, 0.25))
     ])
 
     transform = transforms.Compose([
         transforms.Resize((224,224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522])
+        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240]),
     ])
 
     trainval_data = datasets.OxfordIIITPet(
         root="data",
         split="trainval",
         download=True,
-        target_types=["category", "segmentation"],
+        transform=training_transform,
+    )
+
+    unaugmented_trainval_data = datasets.OxfordIIITPet(
+        root="data",
+        split="trainval",
+        download=True,
+        transform=transform,
     )
 
     test_data = datasets.OxfordIIITPet(
         root="data",
         split="test",
         download=True,
-        target_types=["category", "segmentation"],
+        transform=transform,
     )
 
-    preTransformtrain_data = apply_foreground_mask(trainval_data)
-    test_data = apply_foreground_mask(test_data)
 
-    test_data = apply_transforms(test_data, transform)
-
-    train_dataloader = DataLoader(preTransformtrain_data, BATCH_SIZE, shuffle=True)
+    train_dataloader = DataLoader(trainval_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -195,7 +174,7 @@ if __name__ == "__main__":
 
     model = NeuralNetwork().to(device)
 
-    loss_fn = nn.CrossEntropyLoss(label_smoothing = 0.1)
+    loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=LEARNING_RATE, steps_per_epoch=len(train_dataloader), epochs=EPOCHS)
 
@@ -203,11 +182,10 @@ if __name__ == "__main__":
     for t in range(EPOCHS):
         print(f"Epoch {t+1} / {EPOCHS}\n--------------------------------")
         ##apply training transforms each epoch as they are random
-        train_data = apply_transforms(preTransformtrain_data, training_transform)
-        train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
         train_loop(train_dataloader, model, loss_fn, optimizer,scheduler)
         print("Learning rate: ",scheduler.get_last_lr())
 
+    train_test_dataloaders = DataLoader(unaugmented_trainval_data, BATCH_SIZE, shuffle=False)
     test_loop(train_dataloader, model, loss_fn,"Training")
     test_loop(test_dataloader, model, loss_fn,"Testing")
     torch.save(model.state_dict(), "model.pth")
