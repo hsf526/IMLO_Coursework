@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from PIL import Image
 import numpy as np
-from google.colab import files
 
 
 LEARNING_RATE = 5e-3
@@ -16,12 +15,10 @@ BATCH_SIZE = 32
 EPOCHS = 30
 WEIGHT_DECAY = 1e-4
 
-def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,scheduler):
+def train_loop(train_dataloader, model, loss_fn, optimizer,scheduler):
         size = len(train_dataloader.dataset)
         num_batches = len(train_dataloader)
         print("Size: ",size,"Batches: ",num_batches)
-        # Set the model to training mode - important for batch normalization and dropout layers
-        # Unnecessary in this situation but added for best practices
         model.train()
         for batch, (X, y) in enumerate(train_dataloader):
             X, y = X.to(device), y.to(device)
@@ -37,23 +34,6 @@ def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,sched
             if int(batch/num_batches * 100) % 25 == 0 or batch == num_batches-1:
                 loss, current = loss.item(), batch * BATCH_SIZE + len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-        """
-        val_loss = 0
-        val_correct = 0
-        val_total = 0
-        model.eval()
-        with torch.no_grad():
-            for X,y in val_dataloader:
-                X,y =  X.to(device), y.to(device)
-
-                preds = model(X)
-                val_loss += loss_fn(preds,y).item()
-                val_correct += (preds.argmax(1) == y).sum().item()
-                val_total += y.size(0)
-        val_loss = val_loss/len(val_dataloader)
-        accuracy = val_correct/val_total * 100
-        print(f'Validation Loss: {val_loss:.20f} | Validation Accuracy: {accuracy:.2f}%')
-        """
 
 def test_loop(dataloader, model, loss_fn,text):
     # Set the model to evaluation mode - important for batch normalization and dropout layers
@@ -78,43 +58,7 @@ def test_loop(dataloader, model, loss_fn,text):
     print(f"{text} Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
 
-if __name__ == "__main__":
-
-    """
-
-    transform = transforms.Compose([
-        transforms.Resize((112,112)),
-        transforms.ToTensor()
-    ])
-
-    dataset_no_norm = datasets.OxfordIIITPet(
-        root="data",
-        split="trainval",   # or your actual TRAIN split
-        download=True,
-        transform=transform
-    )
-    loader = DataLoader(dataset_no_norm, batch_size=64, shuffle=False, num_workers=4)
-
-    mean = 0.
-    std = 0.
-    total_images = 0
-
-    for images, _ in loader:
-        batch_samples = images.size(0)
-        images = images.view(batch_samples, images.size(1), -1)
-        mean += images.mean(2).sum(0)
-        std += images.std(2).sum(0)
-        total_images += batch_samples
-
-    mean /= total_images
-    std /= total_images
-
-    print("Mean:", mean)
-    print("Std:", std)
-
-    """
-
-    def apply_foreground_mask(data):
+def apply_foreground_mask(data):
 
         results_np = []
 
@@ -129,14 +73,15 @@ if __name__ == "__main__":
 
         return results_np
 
-    def apply_transforms(data, transform):
-        transformed_data = []
-        for img, label in data:
-            image = Image.fromarray(img.astype(np.uint8))
-            transformed_img = transform(image)
-            transformed_data.append((transformed_img, label))
-        return transformed_data
+def apply_transforms(data, transform):
+    transformed_data = []
+    for img, label in data:
+        image = Image.fromarray(img.astype(np.uint8))
+        transformed_img = transform(image)
+        transformed_data.append((transformed_img, label))
+    return transformed_data
 
+if __name__ == "__main__":
 
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop((224,224), scale=(0.8, 1.0), ratio=(0.9,1.1),antialias=True),
@@ -161,13 +106,6 @@ if __name__ == "__main__":
         target_types=["category", "segmentation"],
     )
 
-    validation_data = datasets.OxfordIIITPet(
-        root="data",
-        split="trainval",
-        download=True,
-        target_types=["category", "segmentation"],
-    )
-
     test_data = datasets.OxfordIIITPet(
         root="data",
         split="test",
@@ -175,26 +113,6 @@ if __name__ == "__main__":
         target_types=["category", "segmentation"],
     )
 
-    """
-    train_size = int(len(trainval_data))
-    val_size = len(trainval_data) - train_size
-
-    ##the split will be the same for both as we have a set seed
-    #so we now have a transformed training set and untransformed validation set
-    gen = torch.Generator().manual_seed(50)
-    train_idx, val_idx = random_split(range(len(trainval_data)), [train_size, val_size], generator=gen)
-
-    # Apply transforms AFTER splitting
-    train_data = Subset(
-        datasets.OxfordIIITPet(root="data", split="trainval",  target_types=["category", "segmentation"]),
-        train_idx.indices
-    )
-
-    val_data = Subset(
-        datasets.OxfordIIITPet(root="data", split="trainval", transform=transform),
-        val_idx.indices
-    )
-    """
     preTransformtrain_data = apply_foreground_mask(trainval_data)
     test_data = apply_foreground_mask(test_data)
 
@@ -202,7 +120,6 @@ if __name__ == "__main__":
 
     train_dataloader = DataLoader(preTransformtrain_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
-    val_dataloader = DataLoader(validation_data,64,shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -288,11 +205,11 @@ if __name__ == "__main__":
         ##apply training transforms each epoch as they are random
         train_data = apply_transforms(preTransformtrain_data, training_transform)
         train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
-        train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,scheduler)
+        train_loop(train_dataloader, model, loss_fn, optimizer,scheduler)
         print("Learning rate: ",scheduler.get_last_lr())
 
     test_loop(train_dataloader, model, loss_fn,"Training")
     test_loop(test_dataloader, model, loss_fn,"Testing")
     torch.save(model.state_dict(), "model.pth")
-    files.download("model.pth")
+    
     print("------------------\nModel Trained and saved to model.pth\n------------------")

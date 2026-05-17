@@ -7,26 +7,53 @@ from torchvision.transforms import ToTensor,Lambda
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
+
+
+def apply_foreground_mask(data):
+
+        results_np = []
+
+        for idx, (img, (label, mask)) in enumerate(data):
+            img_np = np.array(img)
+            mask_np = np.array(mask)
+
+            background = (mask_np == 2)
+            img_np[background] = 128
+
+            results_np.append((img_np, label))
+
+        return results_np
+
+def apply_transforms(data, transform):
+    transformed_data = []
+    for img, label in data:
+        image = Image.fromarray(img.astype(np.uint8))
+        transformed_img = transform(image)
+        transformed_data.append((transformed_img, label))
+    return transformed_data
 
 transform = transforms.Compose([
         transforms.Resize((224,224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4783, 0.4459, 0.3957], std=[0.2254, 0.2223, 0.2240])
+        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522])
     ])
 
 test_data = datasets.OxfordIIITPet(
         root="data",
         split="test",
         download=True,
-        transform=transform
+        target_types=["category", "segmentation"]
     )
+
+test_data = apply_foreground_mask(test_data)
+test_data = apply_transforms(test_data, transform)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class resnetBlock(nn.Module):
-        
-    def __init__(self, c):
+    def __init__(self,c):
         super().__init__()
 
         self.activation = nn.ReLU()
@@ -45,11 +72,11 @@ class resnetBlock(nn.Module):
 class NeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
-        
+
         self.flatten = nn.Flatten()
         self.relu = nn.ReLU()
         self.features = nn.Sequential(
-            
+
             nn.Conv2d(3, 64, 3, stride=2, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
@@ -61,23 +88,18 @@ class NeuralNetwork(nn.Module):
             nn.Conv2d(64, 128, 3, stride=1, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(2), 
+            nn.MaxPool2d(2),
 
             nn.Conv2d(128, 256, 3, stride=1, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(),
-            nn.Conv2d(256, 256, 3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(2), 
+            nn.MaxPool2d(2),
 
             nn.Conv2d(256, 512, 3, stride=1, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(),
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.MaxPool2d(2), 
+            resnetBlock(512),
+            nn.MaxPool2d(2),
 
             resnetBlock(512),
             resnetBlock(512),
@@ -88,7 +110,6 @@ class NeuralNetwork(nn.Module):
 
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-
             nn.Dropout(p=0.5),
             nn.Linear(512*1*1 ,37)
         )
@@ -99,10 +120,11 @@ class NeuralNetwork(nn.Module):
         #print("Shape after features: ",x.shape)
         logits = self.classifyer(x)
         return logits
+
     
 if __name__ == "__main__":
     model = NeuralNetwork()
-    model.load_state_dict(torch.load("model_weights.pth"))
+    model.load_state_dict(torch.load("model.pth"))
     model.eval()
 
     model.to(device)
