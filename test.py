@@ -102,7 +102,7 @@ class NeuralNetwork(nn.Module):
     
 if __name__ == "__main__":
     model = NeuralNetwork()
-    model.load_state_dict(torch.load("model.pth"))
+    model.load_state_dict(torch.load("model_weights.pth"))
     model.eval()
 
     model.to(device)

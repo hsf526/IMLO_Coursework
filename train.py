@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from PIL import Image
 import numpy as np
+from google.colab import files
 
 
 LEARNING_RATE = 5e-3
@@ -54,7 +55,7 @@ def train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,sched
         print(f'Validation Loss: {val_loss:.20f} | Validation Accuracy: {accuracy:.2f}%')
         """
 
-def test_loop(dataloader, model, loss_fn):
+def test_loop(dataloader, model, loss_fn,text):
     # Set the model to evaluation mode - important for batch normalization and dropout layers
     # Unnecessary in this situation but added for best practices
     model.eval()
@@ -74,13 +75,13 @@ def test_loop(dataloader, model, loss_fn):
     print("Test Loss: ",test_loss)
     test_loss /= num_batches
     correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    print(f"{text} Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
 
 if __name__ == "__main__":
 
     """
-    
+
     transform = transforms.Compose([
         transforms.Resize((112,112)),
         transforms.ToTensor()
@@ -123,7 +124,7 @@ if __name__ == "__main__":
 
             background = (mask_np == 2)
             img_np[background] = 128
-            
+
             results_np.append((img_np, label))
 
         return results_np
@@ -140,10 +141,11 @@ if __name__ == "__main__":
     training_transform = transforms.Compose([
         transforms.RandomResizedCrop((224,224), scale=(0.8, 1.0), ratio=(0.9,1.1),antialias=True),
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(degrees=10),
+        transforms.RandomRotation(degrees=15),
         transforms.ColorJitter(brightness=0.2,contrast=0.2,saturation=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522])
+        transforms.Normalize(mean=[0.4929, 0.4729, 0.4556], std=[0.1454, 0.1457, 0.1522]),
+        transforms.RandomErasing(p=0.3, scale=(0.02, 0.25))
     ])
 
     transform = transforms.Compose([
@@ -173,6 +175,7 @@ if __name__ == "__main__":
         target_types=["category", "segmentation"],
     )
 
+    """
     train_size = int(len(trainval_data))
     val_size = len(trainval_data) - train_size
 
@@ -191,36 +194,29 @@ if __name__ == "__main__":
         datasets.OxfordIIITPet(root="data", split="trainval", transform=transform),
         val_idx.indices
     )
-
-    train_data = apply_foreground_mask(train_data)
+    """
+    preTransformtrain_data = apply_foreground_mask(trainval_data)
     test_data = apply_foreground_mask(test_data)
 
-    train_data = apply_transforms(train_data, training_transform)
     test_data = apply_transforms(test_data, transform)
 
-    print(type(train_data))          # should be list
-    print(type(train_data[0]))       # should be tuple
-    print(type(train_data[0][0]))    # should be torch.Tensor
-    print(type(train_data[0][1]))    # should be int
-    print(train_data[0][0].shape)    # should be torch.Size([3, 224, 224])
-
-    train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
+    train_dataloader = DataLoader(preTransformtrain_data, BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, BATCH_SIZE, shuffle=False)
-    val_dataloader = DataLoader(val_data,64,shuffle=False)
+    val_dataloader = DataLoader(validation_data,64,shuffle=False)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     class resnetBlock(nn.Module):
 
-        def __init__(self, c):
+        def __init__(self,c):
             super().__init__()
 
-            self.activation = nn.Mish()
+            self.activation = nn.ReLU()
 
             self.conv = nn.Sequential(
                 nn.Conv2d(c, c, 3, padding=1),
                 nn.BatchNorm2d(c),
-                nn.Mish(),
+                nn.ReLU(),
                 nn.Conv2d(c, c, 3, padding=1),
                 nn.BatchNorm2d(c),
             )
@@ -231,11 +227,11 @@ if __name__ == "__main__":
     class NeuralNetwork(nn.Module):
         def __init__(self):
             super().__init__()
-            
+
             self.flatten = nn.Flatten()
             self.relu = nn.ReLU()
             self.features = nn.Sequential(
-                
+
                 nn.Conv2d(3, 64, 3, stride=2, padding=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
@@ -247,23 +243,18 @@ if __name__ == "__main__":
                 nn.Conv2d(64, 128, 3, stride=1, padding=1),
                 nn.BatchNorm2d(128),
                 nn.ReLU(),
-                nn.MaxPool2d(2), 
+                nn.MaxPool2d(2),
 
                 nn.Conv2d(128, 256, 3, stride=1, padding=1),
                 nn.BatchNorm2d(256),
                 nn.ReLU(),
-                nn.Conv2d(256, 256, 3, stride=1, padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(),
-                nn.MaxPool2d(2), 
+                nn.MaxPool2d(2),
 
                 nn.Conv2d(256, 512, 3, stride=1, padding=1),
                 nn.BatchNorm2d(512),
                 nn.ReLU(),
-                nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
-                nn.Mish(),
-                nn.MaxPool2d(2), 
+                resnetBlock(512),
+                nn.MaxPool2d(2),
 
                 resnetBlock(512),
                 resnetBlock(512),
@@ -284,19 +275,24 @@ if __name__ == "__main__":
             #print("Shape after features: ",x.shape)
             logits = self.classifyer(x)
             return logits
-        
+
     model = NeuralNetwork().to(device)
 
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(label_smoothing = 0.1)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=LEARNING_RATE, steps_per_epoch=len(train_dataloader), epochs=EPOCHS)
-    
+
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1} / {EPOCHS}\n--------------------------------")
+        ##apply training transforms each epoch as they are random
+        train_data = apply_transforms(preTransformtrain_data, training_transform)
+        train_dataloader = DataLoader(train_data, BATCH_SIZE, shuffle=True)
         train_loop(train_dataloader, val_dataloader, model, loss_fn, optimizer,scheduler)
         print("Learning rate: ",scheduler.get_last_lr())
-    
-    test_loop(test_dataloader, model, loss_fn)
+
+    test_loop(train_dataloader, model, loss_fn,"Training")
+    test_loop(test_dataloader, model, loss_fn,"Testing")
     torch.save(model.state_dict(), "model.pth")
+    files.download("model.pth")
     print("------------------\nModel Trained and saved to model.pth\n------------------")
